@@ -66,6 +66,15 @@ export class ChargeService extends BaseService {
           logger.warn({ userId, idempotencyKey, failureReason: 'idempotency_key_conflict' }, 'Payment creation rejected: idempotency key reused by different user');
           throw new DuplicatePaymentError('Idempotency key already used by another user', { idempotencyKey });
         }
+        if (existing.amount !== input.amount) {
+          logger.warn({ userId, idempotencyKey, failureReason: 'idempotency_key_conflict' }, 'Payment creation rejected: idempotency key reused with a different amount');
+          throw new DuplicatePaymentError('Idempotency key already used with a different amount', { idempotencyKey });
+        }
+        const incomingCreatorId = input.creatorId ?? null;
+        if (existing.creatorId !== incomingCreatorId) {
+          logger.warn({ userId, idempotencyKey, failureReason: 'idempotency_key_conflict' }, 'Payment creation rejected: idempotency key reused with a different creator');
+          throw new DuplicatePaymentError('Idempotency key already used with a different creator', { idempotencyKey });
+        }
         return this.toResponse(existing);
       }
 

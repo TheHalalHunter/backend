@@ -400,3 +400,59 @@ describe('provider configuration', () => {
     await expect(service.handleWebhook('stripe', '{}', 'sig')).rejects.toBeInstanceOf(AppError);
   });
 });
+
+describe('ChargeService.createPayment — idempotency key conflict detection', () => {
+  const IDEM_KEY = '550e8400-e29b-41d4-a716-446655440000';
+
+  let prisma: FakePrisma;
+  let service: ChargeService;
+
+  beforeEach(() => {
+    prisma = new FakePrisma();
+    service = buildService({ prisma, provider: new FakePaymentProvider() });
+  });
+
+  it('returns cached result when key + amount + creatorId all match', async () => {
+    const first = await service.createPayment(
+      'user-1',
+      { amount: 50, currency: 'USD', method: 'card', creatorId: 'creator-a' },
+      IDEM_KEY
+    );
+    const second = await service.createPayment(
+      'user-1',
+      { amount: 50, currency: 'USD', method: 'card', creatorId: 'creator-a' },
+      IDEM_KEY
+    );
+
+    expect(second.id).toBe(first.id);
+    expect(prisma.payments).toHaveLength(1);
+  });
+
+  it('throws DuplicatePaymentError (409) when same key exists with different amount', async () => {
+    await service.createPayment(
+      'user-1',
+      { amount: 10, currency: 'USD', method: 'card' },
+      IDEM_KEY
+    );
+
+    await expect(
+      service.createPayment('user-1', { amount: 99, currency: 'USD', method: 'card' }, IDEM_KEY)
+    ).rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_PAYMENT' });
+  });
+
+  it('throws DuplicatePaymentError (409) when same key exists with different creatorId', async () => {
+    await service.createPayment(
+      'user-1',
+      { amount: 10, currency: 'USD', method: 'card', creatorId: 'creator-a' },
+      IDEM_KEY
+    );
+
+    await expect(
+      service.createPayment(
+        'user-1',
+        { amount: 10, currency: 'USD', method: 'card', creatorId: 'creator-b' },
+        IDEM_KEY
+      )
+    ).rejects.toMatchObject({ statusCode: 409, code: 'DUPLICATE_PAYMENT' });
+  });
+});

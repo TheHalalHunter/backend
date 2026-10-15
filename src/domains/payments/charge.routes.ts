@@ -108,7 +108,7 @@ export const registerChargeRoutes = (
               method: { type: 'string', enum: ['card', 'wallet', 'crypto'] },
               creatorId: { type: 'string' },
               description: { type: 'string', maxLength: 500 },
-              idempotencyKey: { type: 'string', minLength: 8, maxLength: 255 },
+              idempotencyKey: { type: 'string', format: 'uuid' },
             },
           },
           response: {
@@ -220,7 +220,7 @@ export const registerChargeRoutes = (
                 type: 'string',
                 enum: ['requested_by_customer', 'duplicate', 'fraudulent'],
               },
-              idempotencyKey: { type: 'string', minLength: 8, maxLength: 255 },
+              idempotencyKey: { type: 'string', format: 'uuid' },
             },
           },
           response: {
