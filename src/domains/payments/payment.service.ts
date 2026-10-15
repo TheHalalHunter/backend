@@ -16,8 +16,11 @@ import {
   InvalidCurrencyError,
   PaymentDeclinedError,
   PaymentNotFoundError,
+  PaymentRequiredError,
+  ServiceUnavailableError,
 } from '../../utils/errors';
 import { buildPaymentTransaction, submitSignedTransaction } from '../../lib/stellar/transactions';
+import { getWalletBalance } from '../../lib/stellar/wallet';
 import { logger } from '../../utils/logger';
 import { sanitizePageSize, sanitizePageNumber, parseSortParameters } from '../../utils/pagination';
 import { paginateWithCursor } from '../../db/pagination';
@@ -204,6 +207,41 @@ export class PaymentService extends BaseService {
       if (accountFreeze) {
         logger.warn({ userId, creatorId: data.creatorId, failureReason: 'account_frozen' }, 'Tip blocked: creator account is frozen');
         throw new PaymentDeclinedError('Creator is not available for tips at this time', { reason: 'account_frozen' });
+      }
+
+      // #175 — Check on-chain balance before creating any DB record
+      const assetCode = requestedAsset?.code ?? 'USDC';
+      let walletBalances: { lumens: string; usdc?: string };
+      try {
+        walletBalances = await getWalletBalance(wallet.publicKey);
+      } catch (err) {
+        logger.error(
+          { userId, walletPublicKey: wallet.publicKey, failureReason: 'balance_check_failed' },
+          'Tip blocked: failed to fetch on-chain wallet balance'
+        );
+        throw new ServiceUnavailableError('Unable to verify wallet balance at this time');
+      }
+
+      const rawBalance =
+        assetCode === 'USDC' ? (walletBalances.usdc ?? '0') : walletBalances.lumens;
+      const currentBalance = parseFloat(rawBalance);
+      if (!Number.isFinite(currentBalance) || currentBalance < data.amount) {
+        logger.warn(
+          {
+            userId,
+            walletPublicKey: wallet.publicKey,
+            requiredAmount: data.amount,
+            currentBalance,
+            currency: assetCode,
+            failureReason: 'insufficient_balance',
+          },
+          'Tip blocked: insufficient on-chain balance'
+        );
+        throw new PaymentRequiredError('Insufficient funds to complete the payment', {
+          requiredAmount: data.amount,
+          currentBalance,
+          currency: assetCode,
+        });
       }
 
       // Idempotency: a retried submission that reuses its key must return the

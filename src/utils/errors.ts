@@ -38,6 +38,7 @@ export const ErrorCodes = {
   PAYMENT_DECLINED: 'PAYMENT_DECLINED',
   DUPLICATE_PAYMENT: 'DUPLICATE_PAYMENT',
   PAYMENT_NOT_FOUND: 'PAYMENT_NOT_FOUND',
+  PAYMENT_REQUIRED: 'PAYMENT_REQUIRED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -165,6 +166,12 @@ export const ERROR_CATALOG: Record<string, ErrorDefinition> = {
     statusCode: 404,
     code: 'PAYMENT_NOT_FOUND',
     message: 'The requested payment was not found',
+    expose: true,
+  },
+  [ErrorCodes.PAYMENT_REQUIRED]: {
+    statusCode: 402,
+    code: 'PAYMENT_REQUIRED',
+    message: 'Insufficient funds to complete the payment',
     expose: true,
   },
 };
@@ -338,6 +345,13 @@ export class PaymentNotFoundError extends AppError {
   constructor(message = 'The requested payment was not found', details?: ErrorDetails) {
     super(404, ErrorCodes.PAYMENT_NOT_FOUND, message, { details });
     this.name = 'PaymentNotFoundError';
+  }
+}
+
+export class PaymentRequiredError extends AppError {
+  constructor(message = 'Insufficient funds to complete the payment', details?: ErrorDetails) {
+    super(402, ErrorCodes.PAYMENT_REQUIRED, message, { details });
+    this.name = 'PaymentRequiredError';
   }
 }
 

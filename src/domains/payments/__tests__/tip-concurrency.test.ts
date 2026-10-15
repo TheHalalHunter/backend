@@ -15,6 +15,11 @@ vi.mock('../../../lib/stellar/transactions', () => ({
   checkTransactionStatus: vi.fn(),
 }));
 
+// Stub getWalletBalance so balance checks don't hit the network.
+vi.mock('../../../lib/stellar/wallet', () => ({
+  getWalletBalance: vi.fn().mockResolvedValue({ lumens: '100', usdc: '1000' }),
+}));
+
 import { PaymentService } from '../payment.service';
 import { ConflictError, NotFoundError } from '../../../utils/errors';
 import { submitSignedTransaction } from '../../../lib/stellar/transactions';
