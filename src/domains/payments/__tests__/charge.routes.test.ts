@@ -58,7 +58,7 @@ describe('payment routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/payments',
-      headers: { authorization: `Bearer ${tokenFor('user-1')}`, 'idempotency-key': 'route-key-1' },
+      headers: { authorization: `Bearer ${tokenFor('user-1')}`, 'idempotency-key': 'c0ffee00-0000-4000-a000-000000000001' },
       payload: { amount: 10, currency: 'USD', method: 'card' },
     });
 
@@ -128,7 +128,7 @@ describe('payment routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/payments/${id}/refund`,
-      headers: { ...auth, 'idempotency-key': 'refund-route-1' },
+      headers: { ...auth, 'idempotency-key': 'c0ffee00-0000-4000-a000-000000000002' },
       payload: {},
     });
 
@@ -172,6 +172,28 @@ describe('payment routes', () => {
     const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
     const VALID_UUID_2 = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
     const authHeaders = () => ({ authorization: `Bearer ${tokenFor('user-1')}` });
+
+    it('rejects a non-UUID Idempotency-Key header → 400', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/payments',
+        headers: { ...authHeaders(), 'idempotency-key': 'not-a-uuid' },
+        payload: { amount: 10, currency: 'USD', method: 'card' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects an empty string Idempotency-Key header → 400', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/payments',
+        headers: { ...authHeaders(), 'idempotency-key': '' },
+        payload: { amount: 10, currency: 'USD', method: 'card' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().code).toBe('VALIDATION_ERROR');
+    });
 
     it('auto-generates an idempotency key when none is provided → 201', async () => {
       const res = await app.inject({
