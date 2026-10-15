@@ -4,9 +4,16 @@ vi.mock('../webhooks/webhook.service', () => ({
 }));
 const { publish } = vi.hoisted(() => ({ publish: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../lib/queue', () => ({ stellarConfirmationQueue: { add: vi.fn() } }));
+// #175 — stub getWalletBalance so tests stay hermetic (no Stellar network call)
+vi.mock('../../lib/stellar/wallet', () => ({
+  getWalletBalance: vi.fn(),
+}));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PaymentService } from './payment.service';
 import { ValidationError, NotFoundError, PaymentDeclinedError, PaymentNotFoundError } from '../../utils/errors';
+import { getWalletBalance } from '../../lib/stellar/wallet';
+
+const mockGetWalletBalance = getWalletBalance as ReturnType<typeof vi.fn>;
 
 // Mock Prisma
 const mockPrisma = {
@@ -46,6 +53,9 @@ describe('PaymentService', () => {
   beforeEach(() => {
     paymentService = new PaymentService(mockPrisma as unknown as PrismaClient);
     vi.clearAllMocks();
+
+    // #175 — default: wallet has ample balance so existing tests pass unchanged
+    mockGetWalletBalance.mockResolvedValue({ lumens: '100', usdc: '1000' });
 
     mockPrisma.stellarAsset.findFirst.mockResolvedValue({
       id: 'asset-usdc',

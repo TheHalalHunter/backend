@@ -57,7 +57,17 @@ export class ChargeService extends BaseService {
     return this.provider.name;
   }
 
-  /** Creates (or returns the existing) payment for an idempotency key. */
+  /**
+   * Creates (or returns the existing) payment for an idempotency key.
+   *
+   * #175 — No on-chain balance check is performed here. ChargeService processes
+   * tokenized card payments through an external provider (e.g. Stripe); there is
+   * no sender Stellar wallet and no on-chain balance to verify. The pre-flight
+   * balance check required by #175 applies only to Stellar-based tip flows in
+   * PaymentService.createTip(), where a wallet public key and getWalletBalance()
+   * are available. Card payment failures are handled by the provider and surfaced
+   * via webhook status transitions.
+   */
   async createPayment(userId: string, input: CreatePaymentInput, idempotencyKey: string): Promise<PaymentResponse> {
     return this.executeWithLogging('payments.create', async () => {
       const existing = await this.prisma.payment.findUnique({ where: { idempotencyKey }, include: { refunds: true } });
