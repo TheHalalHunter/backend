@@ -13,6 +13,9 @@ import {
   NotFoundError,
   UnauthorizedError,
   ConflictError,
+  InvalidCurrencyError,
+  PaymentDeclinedError,
+  PaymentNotFoundError,
 } from '../../utils/errors';
 import { buildPaymentTransaction, submitSignedTransaction } from '../../lib/stellar/transactions';
 import { logger } from '../../utils/logger';
@@ -140,7 +143,10 @@ export class PaymentService extends BaseService {
             where: { enabled: true, code: 'USDC' },
             orderBy: { priority: 'desc' },
           });
-      if (data.assetId && !requestedAsset) throw new ValidationError('Asset is unavailable');
+      if (data.assetId && !requestedAsset) {
+        logger.warn({ userId, assetId: data.assetId, failureReason: 'asset_unavailable' }, 'Tip blocked: requested asset is unavailable');
+        throw new InvalidCurrencyError(data.assetId ?? 'unknown', { assetId: data.assetId });
+      }
 
       // Verify sender is not tipping themselves
       const sender = await this.prisma.user.findUnique({
@@ -180,8 +186,8 @@ export class PaymentService extends BaseService {
       });
 
       if (walletFlag) {
-        logger.warn(`Tip blocked: sender wallet ${wallet.publicKey} is flagged`);
-        throw new ValidationError('Payment cannot be processed at this time');
+        logger.warn({ userId, walletPublicKey: wallet.publicKey, failureReason: 'wallet_flagged' }, 'Tip blocked: sender wallet is flagged');
+        throw new PaymentDeclinedError('Payment cannot be processed at this time', { reason: 'wallet_flagged' });
       }
 
       // #36 - Block payments to frozen creator accounts
@@ -196,8 +202,8 @@ export class PaymentService extends BaseService {
       });
 
       if (accountFreeze) {
-        logger.warn(`Tip blocked: creator account ${creator.id} is frozen`);
-        throw new ValidationError('Creator is not available for tips at this time');
+        logger.warn({ userId, creatorId: data.creatorId, failureReason: 'account_frozen' }, 'Tip blocked: creator account is frozen');
+        throw new PaymentDeclinedError('Creator is not available for tips at this time', { reason: 'account_frozen' });
       }
 
       // Idempotency: a retried submission that reuses its key must return the
@@ -342,13 +348,15 @@ export class PaymentService extends BaseService {
       });
 
       if (!tip) {
-        throw new NotFoundError('Tip');
+        logger.warn({ tipId, failureReason: 'tip_not_found' }, 'Tip not found');
+        throw new PaymentNotFoundError();
       }
 
       // Removed content is gone rather than hidden: a direct lookup 404s, while a
       // hidden tip stays readable so its sender and creator can see it (#62).
       if (tip.moderationState === 'removed') {
-        throw new NotFoundError('Tip');
+        logger.warn({ tipId, moderationState: tip.moderationState, failureReason: 'tip_removed' }, 'Tip access denied due to moderation removal');
+        throw new PaymentNotFoundError();
       }
 
       return this.formatTipResponse(tip);
@@ -1033,8 +1041,8 @@ export class PaymentService extends BaseService {
           fee: 100, // Base fee in stroops
         };
       } catch (error) {
-        logger.error(`Failed to build transaction for tip ${tipId}:`, error);
-        throw new ValidationError('Failed to build payment transaction');
+        logger.error({ userId: tip.fromUserId, tipId, failureReason: 'build_failed', cause: (error as Error).message }, 'Failed to build payment transaction');
+        throw new PaymentDeclinedError('Failed to build payment transaction', { tipId });
       }
     });
   }
@@ -1085,8 +1093,8 @@ export class PaymentService extends BaseService {
       try {
         result = await submitSignedTransaction(transactionEnvelope);
       } catch (error) {
-        logger.error(`Failed to submit transaction for tip ${tipId}:`, error);
-        throw new ValidationError('Failed to submit payment transaction');
+        logger.error({ tipId, failureReason: 'submit_failed', cause: (error as Error).message }, 'Failed to submit transaction to Stellar network');
+        throw new PaymentDeclinedError('Failed to submit payment transaction', { tipId });
       }
 
       try {
@@ -1128,8 +1136,8 @@ export class PaymentService extends BaseService {
           }
           throw new ConflictError('Transaction has already been submitted for this tip', { tipId });
         }
-        logger.error(`Failed to store transaction for tip ${tipId}:`, error);
-        throw new ValidationError('Failed to submit payment transaction');
+        logger.error({ tipId, failureReason: 'persist_failed', cause: (error as Error).message }, 'Failed to persist transaction hash');
+        throw new PaymentDeclinedError('Failed to record payment transaction', { tipId });
       }
     });
   }

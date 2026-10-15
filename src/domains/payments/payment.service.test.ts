@@ -6,7 +6,7 @@ const { publish } = vi.hoisted(() => ({ publish: vi.fn().mockResolvedValue(undef
 vi.mock('../../lib/queue', () => ({ stellarConfirmationQueue: { add: vi.fn() } }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PaymentService } from './payment.service';
-import { ValidationError, NotFoundError } from '../../utils/errors';
+import { ValidationError, NotFoundError, PaymentDeclinedError, PaymentNotFoundError } from '../../utils/errors';
 
 // Mock Prisma
 const mockPrisma = {
@@ -193,7 +193,7 @@ describe('PaymentService', () => {
       mockPrisma.walletFlag.findFirst.mockResolvedValue({ id: 'flag-1' });
 
       await expect(paymentService.createTip(userId, { creatorId, amount: 50 })).rejects.toThrow(
-        ValidationError
+        PaymentDeclinedError
       );
       expect(mockPrisma.tip.create).not.toHaveBeenCalled();
     });
@@ -252,7 +252,7 @@ describe('PaymentService', () => {
       mockPrisma.accountFreeze.findFirst.mockResolvedValue({ id: 'freeze-1' });
 
       await expect(paymentService.createTip(userId, { creatorId, amount: 100 })).rejects.toThrow(
-        ValidationError
+        PaymentDeclinedError
       );
       expect(mockPrisma.tip.create).not.toHaveBeenCalled();
     });
@@ -356,7 +356,7 @@ describe('PaymentService', () => {
     it('should throw NotFoundError if tip does not exist', async () => {
       mockPrisma.tip.findUnique.mockResolvedValue(null);
 
-      await expect(paymentService.getTip('non-existent')).rejects.toThrow(NotFoundError);
+      await expect(paymentService.getTip('non-existent')).rejects.toThrow(PaymentNotFoundError);
     });
   });
 

@@ -3,7 +3,7 @@ import { ChargeService } from '../charge.service';
 import { FakePrisma } from './fake-prisma';
 import { FakePaymentProvider } from '../../../lib/payments/provider';
 import { PaymentProvider } from '../../../lib/payments/types';
-import { AppError, ValidationError, UnauthorizedError } from '../../../utils/errors';
+import { AppError, ValidationError, UnauthorizedError, DuplicatePaymentError, ForbiddenError } from '../../../utils/errors';
 
 const noSleep = async (): Promise<void> => undefined;
 
@@ -321,6 +321,62 @@ describe('ChargeService.handleWebhook', () => {
 
     const result = await service.handleWebhook('fake', payload, signature);
     expect(result).toMatchObject({ received: true, handled: false });
+  });
+});
+
+describe('ChargeService typed error classes', () => {
+  let prisma: FakePrisma;
+  let provider: FakePaymentProvider;
+  let service: ChargeService;
+
+  beforeEach(() => {
+    prisma = new FakePrisma();
+    provider = new FakePaymentProvider({ status: 'requires_confirmation' });
+    service = buildService({ prisma, provider });
+  });
+
+  it('rejects with DuplicatePaymentError when idempotency key is reused by another user', async () => {
+    await service.createPayment('user-1', { amount: 10, currency: 'USD', method: 'card' }, 'key-dup');
+
+    let error: unknown;
+    try {
+      await service.createPayment('user-2', { amount: 10, currency: 'USD', method: 'card' }, 'key-dup');
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeInstanceOf(DuplicatePaymentError);
+    expect((error as DuplicatePaymentError).statusCode).toBe(409);
+  });
+
+  it('rejects getPayment with ForbiddenError when payment belongs to another user', async () => {
+    const payment = await service.createPayment('user-1', { amount: 10, currency: 'USD', method: 'card' }, 'key-owner');
+
+    let error: unknown;
+    try {
+      await service.getPayment(payment.id, 'user-2');
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as ForbiddenError).statusCode).toBe(403);
+  });
+
+  it('rejects refundPayment with ForbiddenError when payment belongs to another user', async () => {
+    const succeededProvider = new FakePaymentProvider({ status: 'succeeded', refundStatus: 'succeeded' });
+    const svc = buildService({ prisma, provider: succeededProvider });
+    const payment = await svc.createPayment('user-1', { amount: 10, currency: 'USD', method: 'card' }, 'key-refund-owner');
+
+    let error: unknown;
+    try {
+      await svc.refundPayment(payment.id, 'user-2', {}, 'refund-key-wrong');
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as ForbiddenError).statusCode).toBe(403);
   });
 });
 

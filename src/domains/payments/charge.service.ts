@@ -1,6 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { BaseService } from '../../services/base.service';
-import { AppError, NotFoundError, UnauthorizedError, ValidationError } from '../../utils/errors';
+import { AppError, NotFoundError, UnauthorizedError, ValidationError, DuplicatePaymentError, ForbiddenError, InsufficientFundsError, InvalidCurrencyError, PaymentDeclinedError, PaymentNotFoundError } from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { PaymentProvider, createPaymentProvider, resolveWebhookSecret, resolveWebhookToleranceSeconds } from '../../lib/payments/provider';
 import { isRetryableProviderError, retryOperation, RetryOptions } from '../../lib/payments/retry';
@@ -63,7 +63,8 @@ export class ChargeService extends BaseService {
       const existing = await this.prisma.payment.findUnique({ where: { idempotencyKey }, include: { refunds: true } });
       if (existing) {
         if (existing.userId !== userId) {
-          throw new AppError(409, 'CONFLICT', 'Idempotency key already used by another user');
+          logger.warn({ userId, idempotencyKey, failureReason: 'idempotency_key_conflict' }, 'Payment creation rejected: idempotency key reused by different user');
+          throw new DuplicatePaymentError('Idempotency key already used by another user', { idempotencyKey });
         }
         return this.toResponse(existing);
       }
@@ -122,7 +123,8 @@ export class ChargeService extends BaseService {
         throw new NotFoundError('Payment');
       }
       if (userId && payment.userId !== userId) {
-        throw new AppError(403, 'FORBIDDEN', 'Payment belongs to another user');
+        logger.warn({ requestingUserId: userId, paymentId, failureReason: 'wrong_owner' }, 'Payment access denied: belongs to another user');
+        throw new ForbiddenError('Payment belongs to another user');
       }
       return this.toResponse(payment);
     });
@@ -174,9 +176,11 @@ export class ChargeService extends BaseService {
         throw new NotFoundError('Payment');
       }
       if (payment.userId !== userId) {
-        throw new AppError(403, 'FORBIDDEN', 'Payment belongs to another user');
+        logger.warn({ requestingUserId: userId, paymentId, failureReason: 'wrong_owner' }, 'Refund access denied: payment belongs to another user');
+        throw new ForbiddenError('Payment belongs to another user');
       }
       if (!isRefundablePaymentStatus(payment.status)) {
+        logger.warn({ userId, paymentId, paymentStatus: payment.status, failureReason: 'non_refundable_status' }, 'Refund rejected: payment status is not refundable');
         throw new ValidationError(`Payment in status "${payment.status}" cannot be refunded`);
       }
       if (!payment.providerRef) {
@@ -188,9 +192,11 @@ export class ChargeService extends BaseService {
       const amount = input.amount ?? remaining;
 
       if (amount <= 0) {
+        logger.warn({ userId, paymentId, alreadyRefunded, failureReason: 'nothing_to_refund' }, 'Refund rejected: nothing left to refund');
         throw new ValidationError('Nothing left to refund');
       }
       if (amount > remaining) {
+        logger.warn({ userId, paymentId, requested: amount, remaining, failureReason: 'refund_exceeds_balance' }, 'Refund rejected: exceeds refundable amount');
         throw new ValidationError(`Refund exceeds the refundable amount of ${remaining}`);
       }
 
@@ -245,11 +251,13 @@ export class ChargeService extends BaseService {
   async handleWebhook(providerName: string, rawBody: string, signature?: string): Promise<WebhookResult> {
     return this.executeWithLogging('payments.webhook', async () => {
       if (providerName !== this.provider.name && providerName !== 'stripe') {
+        logger.warn({ providerName, failureReason: 'unsupported_provider' }, 'Webhook rejected: unsupported provider');
         throw new ValidationError(`Unsupported payment provider "${providerName}"`);
       }
 
       const secret = this.webhookSecret ?? (this.provider.name === 'fake' ? 'fake-webhook-secret' : undefined);
       if (!secret) {
+        logger.error({ failureReason: 'webhook_secret_not_configured' }, 'Webhook rejected: secret not configured');
         throw new ValidationError('Webhook secret is not configured');
       }
 
