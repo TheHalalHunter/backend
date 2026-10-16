@@ -498,4 +498,48 @@ describe('wallet route per-user rate limiting', () => {
     });
     expect(fromIpB.statusCode).toBe(429);
   });
+
+  it('unauthenticated request falls back to IP bucket, not a user bucket', async () => {
+    app = await buildWalletApp();
+
+    // Unauthenticated requests to wallet routes still increment the rate-limit counter
+    // (onRequest fires before authMiddleware's preHandler). The response is 401 from
+    // authMiddleware, but the IP bucket still depletes. After exhausting the walletNonce
+    // limit of 2, the 3rd unauthenticated request from the same IP receives 429.
+    for (let i = 0; i < 2; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/wallet/challenge',
+        remoteAddress: '10.2.2.2',
+      });
+      // Auth rejected, but rate-limit counter was incremented
+      expect(res.statusCode).toBe(401);
+    }
+
+    // Third request from the same IP without a token — now blocked at the rate limit
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/wallet/challenge',
+      remoteAddress: '10.2.2.2',
+    });
+    expect(blocked.statusCode).toBe(429);
+
+    // A different IP without a token has its own bucket — not yet exhausted
+    const otherIp = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/wallet/challenge',
+      remoteAddress: '10.2.2.3',
+    });
+    // This IP's bucket is fresh, so rate limit passes and authMiddleware rejects with 401
+    expect(otherIp.statusCode).toBe(401);
+
+    // An authenticated user from the same blocked IP uses a separate user bucket
+    const authedFromBlockedIp = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/wallet/challenge',
+      headers: bearer('frank-wallet'),
+      remoteAddress: '10.2.2.2',
+    });
+    expect(authedFromBlockedIp.statusCode).toBe(200);
+  });
 });
