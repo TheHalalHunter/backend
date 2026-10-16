@@ -226,6 +226,10 @@ Policies and route classification live in `src/config/rate-limit.ts`
 | `RATE_LIMIT_AUTHENTICATED_WINDOW_MS` | int  | `60000`  | 1000–3600000     | no     | ✅         | Authenticated route window                                         |
 | `RATE_LIMIT_SENSITIVE_MAX`           | int  | `10`     | 1–1000           | no     | ✅         | Max requests per sensitive route (login, tips, payouts) per window |
 | `RATE_LIMIT_SENSITIVE_WINDOW_MS`     | int  | `60000`  | 1000–3600000     | no     | ✅         | Sensitive route window                                             |
+| `RATE_LIMIT_WALLET_NONCE_MAX`        | int  | `5`      | 1–1000           | no     | ✅         | Max wallet challenge (nonce) requests per user per window          |
+| `RATE_LIMIT_WALLET_NONCE_WINDOW_MS`  | int  | `3600000`| 1000–3600000     | no     | ✅         | Wallet nonce rate-limit window (default 1 hour)                    |
+| `RATE_LIMIT_WALLET_VERIFY_MAX`       | int  | `10`     | 1–1000           | no     | ✅         | Max wallet verify requests per user per window                     |
+| `RATE_LIMIT_WALLET_VERIFY_WINDOW_MS` | int  | `3600000`| 1000–3600000     | no     | ✅         | Wallet verify rate-limit window (default 1 hour)                   |
 | `RATE_LIMIT_INTERNAL_MAX`            | int  | `1000`   | 1–1000000        | no     | ✅         | Internal service route limit per service/key bucket                |
 | `RATE_LIMIT_INTERNAL_WINDOW_MS`      | int  | `60000`  | 1000–3600000     | no     | ✅         | Internal service route window                                      |
 

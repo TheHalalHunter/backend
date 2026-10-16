@@ -252,6 +252,10 @@ export const EnvSchemaObject = z.object({
   RATE_LIMIT_AUTHENTICATED_WINDOW_MS: int(60_000, { min: 1_000, max: 3_600_000 }),
   RATE_LIMIT_SENSITIVE_MAX: int(10, { min: 1, max: 1_000 }),
   RATE_LIMIT_SENSITIVE_WINDOW_MS: int(60_000, { min: 1_000, max: 3_600_000 }),
+  RATE_LIMIT_WALLET_NONCE_MAX: int(5, { min: 1, max: 1_000 }),
+  RATE_LIMIT_WALLET_NONCE_WINDOW_MS: int(3_600_000, { min: 1_000, max: 3_600_000 }),
+  RATE_LIMIT_WALLET_VERIFY_MAX: int(10, { min: 1, max: 1_000 }),
+  RATE_LIMIT_WALLET_VERIFY_WINDOW_MS: int(3_600_000, { min: 1_000, max: 3_600_000 }),
 
   // ── API versioning ─────────────────────────────────────────────────────
   SUPPORTED_API_VERSIONS: z.string().default('1,2'),
