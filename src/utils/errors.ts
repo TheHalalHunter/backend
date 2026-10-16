@@ -348,8 +348,14 @@ export class PaymentNotFoundError extends AppError {
   }
 }
 
+export interface PaymentRequiredDetails extends ErrorDetails {
+  requiredAmount: number;
+  currentBalance: number;
+  currency: string;
+}
+
 export class PaymentRequiredError extends AppError {
-  constructor(message = 'Insufficient funds to complete the payment', details?: ErrorDetails) {
+  constructor(message = 'Insufficient funds to complete the payment', details?: PaymentRequiredDetails) {
     super(402, ErrorCodes.PAYMENT_REQUIRED, message, { details });
     this.name = 'PaymentRequiredError';
   }

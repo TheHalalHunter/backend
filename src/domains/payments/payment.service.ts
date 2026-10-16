@@ -209,6 +209,23 @@ export class PaymentService extends BaseService {
         throw new PaymentDeclinedError('Creator is not available for tips at this time', { reason: 'account_frozen' });
       }
 
+      // Idempotency: a retried submission that reuses its key must return the
+      // tip created by the first attempt instead of creating a second charge.
+      // This check runs BEFORE the Stellar balance call so retries short-circuit
+      // without re-hitting the network. (#175 ordering fix)
+      if (data.idempotencyKey) {
+        const existing = await this.prisma.tip.findUnique({
+          where: { idempotencyKey: data.idempotencyKey },
+        });
+        if (existing) {
+          if (existing.fromUserId !== userId) {
+            throw new ConflictError('Idempotency key already used by another user');
+          }
+          logger.info(`Idempotent tip creation replayed for key ${data.idempotencyKey}`);
+          return this.formatTipResponse(existing);
+        }
+      }
+
       // #175 — Check on-chain balance before creating any DB record
       const assetCode = requestedAsset?.code ?? 'USDC';
       let walletBalances: { lumens: string; usdc?: string };
@@ -242,21 +259,6 @@ export class PaymentService extends BaseService {
           currentBalance,
           currency: assetCode,
         });
-      }
-
-      // Idempotency: a retried submission that reuses its key must return the
-      // tip created by the first attempt instead of creating a second charge.
-      if (data.idempotencyKey) {
-        const existing = await this.prisma.tip.findUnique({
-          where: { idempotencyKey: data.idempotencyKey },
-        });
-        if (existing) {
-          if (existing.fromUserId !== userId) {
-            throw new ConflictError('Idempotency key already used by another user');
-          }
-          logger.info(`Idempotent tip creation replayed for key ${data.idempotencyKey}`);
-          return this.formatTipResponse(existing);
-        }
       }
 
       // Validate requested media (#64) before creating the tip: every id must be
